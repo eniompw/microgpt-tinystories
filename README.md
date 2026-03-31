@@ -63,13 +63,20 @@ python microgpt.py
 The updated notebook and `gpt_gpu.py` adopt a Llama-style design in place of the original minimal GPT:
 
 **Architecture**
-- **RMSNorm** instead of LayerNorm — applied before each sub-layer (pre-norm)
-- **RoPE** (Rotary Position Embeddings) instead of learned position embeddings
-- **Weight tying** — the token embedding matrix is reused as the language model head
-- **KV cache** — inference uses a per-layer key/value cache for efficient token-by-token generation
-- **Flash attention** — `F.scaled_dot_product_attention` with `is_causal=True` during training
+
+| Change | Benefit | Impact |
+|---|---|---|
+| **Batched sequence processing** — full `(B, T)` tensor forward pass instead of token-by-token | Massive GPU utilization improvement; enables all other speed gains | Speed +++ |
+| **Flash attention** — `F.scaled_dot_product_attention` with `is_causal=True` | Fused O(T) memory attention kernel, ~2–4× faster than manual matmuls | Speed +++ |
+| **RoPE** (Rotary Position Embeddings) instead of learned position embeddings | Better length generalization, no extra parameters | Accuracy ++ |
+| **Weight tying** — embedding matrix reused as lm_head | Fewer parameters, stronger gradient signal to embeddings | Accuracy + |
+| **RMSNorm** instead of LayerNorm (pre-norm) | Simpler, faster, no mean subtraction or bias | Speed + |
+| **KV cache** — per-layer key/value cache at inference | Efficient token-by-token generation (linear instead of quadratic) | Inference speed ++ |
 
 **Training**
-- **AdamW** optimizer with linear learning rate decay (matching `microgpt.py`)
-- **Mixed precision** — `torch.amp.autocast` with `float16` and a `GradScaler`
-- **`torch.compile`** — fuses GPU kernels on the training forward pass for ~2x speedup
+
+| Change | Benefit | Impact |
+|---|---|---|
+| **Mixed precision** — `float16` autocast + `GradScaler` | ~2× speed, halves memory bandwidth; enables larger batches on T4 | Speed ++ |
+| **AdamW** optimizer with linear learning rate decay (matching `microgpt.py`) | Decoupled weight decay for better generalization | Accuracy + |
+| **`torch.compile`** — fuses GPU kernels on training forward pass | ~2× additional speedup by optimizing the computation graph | Speed ++ |
