@@ -64,12 +64,12 @@ print(f"decode(...)           → '{decoded}'")
 # ── Hyperparameters ───────────────────────────────────────────────────────────
 import math
 
-n_layer    = 5       # transformer depth
-n_embd     = 128     # embedding dim
+n_layer    = 6       # transformer depth
+n_embd     = 256     # embedding dim
 block_size = 256     # context window
 n_head     = 8       # attention heads
 head_dim   = n_embd // n_head
-batch_size = 128     # sequences per gradient step
+batch_size = 64      # sequences per gradient step
 
 # ── Weight init ──────────────────────────────────────────────────────────────
 matrix = lambda nout, nin: torch.randn(nout, nin, device=device) * 0.02
@@ -132,7 +132,7 @@ def gpt_train(tokens):
         x = F.linear(x, state_dict[f'layer{li}.attn_wo']) + r
         r = x
         x = rmsnorm(x)
-        x = F.relu(F.linear(x, state_dict[f'layer{li}.mlp_fc1']))
+        x = F.silu(F.linear(x, state_dict[f'layer{li}.mlp_fc1']))
         x = F.linear(x, state_dict[f'layer{li}.mlp_fc2']) + r
     return F.linear(rmsnorm(x), state_dict['wte'])   # weight-tied lm_head
 
@@ -158,7 +158,7 @@ def gpt(token_id, pos_id, keys, values):
         x = F.linear(torch.cat(x_attn), state_dict[f'layer{li}.attn_wo']) + r
         r = x
         x = rmsnorm(x)
-        x = F.relu(F.linear(x, state_dict[f'layer{li}.mlp_fc1']))
+        x = F.silu(F.linear(x, state_dict[f'layer{li}.mlp_fc1']))
         x = F.linear(x, state_dict[f'layer{li}.mlp_fc2']) + r
     return F.linear(rmsnorm(x), state_dict['wte'])
 
@@ -178,7 +178,8 @@ print(f"Total tokens: {len(all_tokens):,}")
 
 # ── Optimizer: AdamW ─────────────────────────────────────────────────────────
 num_steps     = 2000
-learning_rate = 5e-4
+warmup_steps  = 200
+learning_rate = 1e-3
 
 optimizer = torch.optim.AdamW(params, lr=learning_rate, betas=(0.9, 0.95), eps=1e-10)
 
@@ -190,8 +191,12 @@ loss_history = []
 t0 = time.time()
 
 for step in range(num_steps + 1):
-    # Linear learning rate decay
-    lr_t = learning_rate * (1 - step / num_steps)
+    # Cosine learning rate schedule with warmup
+    if step < warmup_steps:
+        lr_t = learning_rate * step / warmup_steps
+    else:
+        progress = (step - warmup_steps) / (num_steps - warmup_steps)
+        lr_t = learning_rate * 0.5 * (1 + math.cos(math.pi * progress))
     for g in optimizer.param_groups:
         g['lr'] = lr_t
 
@@ -213,6 +218,8 @@ for step in range(num_steps + 1):
     with torch.amp.autocast('cuda', dtype=torch.float16):
         loss = F.cross_entropy(gpt_train(xb).view(-1, vocab_size), yb.view(-1))
     scaler.scale(loss).backward()
+    scaler.unscale_(optimizer)
+    torch.nn.utils.clip_grad_norm_(params, 1.0)
     scaler.step(optimizer)
     scaler.update()
     loss_history.append(loss.item())
@@ -224,7 +231,7 @@ plt.xlabel('Step'); plt.ylabel('Loss'); plt.title('Training Loss')
 plt.tight_layout(); plt.show()
 
 # ── Inference ─────────────────────────────────────────────────────────────────
-temperature = 0.8   # (0, 1] — lower = more focused, higher = more random
+temperature = 0.7   # (0, 1] — lower = more focused, higher = more random
 num_samples = 5
 max_new_tokens = 200  # generate up to this many tokens per sample
 
