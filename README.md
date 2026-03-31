@@ -4,6 +4,8 @@ A minimal GPT trained from scratch — in a single Python file with no dependenc
 
 Based on [microgpt.py](https://gist.githubusercontent.com/karpathy/8627fe009c40f57531cb18360106ce95/raw/14fb038816c7aae0bb9342c2dbf1a51dd134a5ff/microgpt.py) by Andrej Karpathy.
 
+The updated `microgpt-colab.ipynb` and `gpt.py` took significant inspiration from [`model.py`](https://github.com/EN10/modded-llama2.c/blob/main/model.py) and [`train.py`](https://github.com/EN10/modded-llama2.c/blob/main/train.py) from [EN10/modded-llama2.c](https://github.com/EN10/modded-llama2.c).
+
 ---
 
 ## `microgpt.py` — Pure Python, no dependencies
@@ -44,38 +46,34 @@ python microgpt.py
 | Vocabulary | Dynamic (from dataset) | Fixed 74-char ASCII |
 | Output | Hallucinated names | Hallucinated story snippets |
 
-### Default model configuration
+### Model configuration
 
 | Hyperparameter | Value | Role |
 |---|---|---|
-| `n_layer` | 2 | Number of transformer blocks |
-| `n_embd` | 16 | Embedding / hidden dimension |
-| `block_size` | 16 | Max context length (tokens) |
-| `n_head` | 4 | Number of attention heads |
+| `n_layer` | 5 | Number of transformer blocks |
+| `n_embd` | 128 | Embedding / hidden dimension |
+| `block_size` | 256 | Max context length (tokens) |
+| `n_head` | 8 | Number of attention heads |
+| `batch_size` | 32 | Sequences per gradient step |
+| `grad_accum_steps` | 4 | Gradient accumulation steps |
 
-### Estimated runtime (Colab T4 GPU, default config)
+### Architecture and training changes (inspired by [EN10/modded-llama2.c](https://github.com/EN10/modded-llama2.c))
 
-| Step | Time |
-|---|---|
-| Setup & imports | < 5 s |
-| Dataset download (first run only) | ~20–30 s |
-| Tokenizer + model init | < 1 s |
-| Training (1000 steps) | ~2–4 min |
-| Inference (5 samples × ≤200 tokens) | < 10 s |
+The updated notebook and `gpt.py` adopt a Llama-style design in place of the original minimal GPT:
 
-Training uses a Python `for` loop over tokens with no batching — this is the main bottleneck. After the first run, `input.txt` is cached so the download is skipped.
+**Architecture**
+- **RMSNorm** instead of LayerNorm — applied before each sub-layer (pre-norm)
+- **RoPE** (Rotary Position Embeddings) instead of learned position embeddings
+- **relu²** activation (`F.relu(...).square()`) in the MLP instead of GELU
+- **Weight tying** — the token embedding matrix is reused as the language model head
+- **Padded vocab** — vocabulary size padded to a multiple of 128 for GPU efficiency
+- **KV cache** — inference uses a per-layer key/value cache for efficient token-by-token generation
+- **Flash attention** — `F.scaled_dot_product_attention` with `is_causal=True` during training
 
-### Scaling up: how hyperparameters affect training time
-
-Each hyperparameter has a different cost profile:
-
-| Hyperparameter | Cost scaling | Why |
-|---|---|---|
-| `num_steps` | linear | One forward+backward pass per step |
-| `n_layer` | linear | Each layer adds the same fixed amount of compute |
-| `n_embd` | quadratic | Weight matrices are `n_embd × n_embd` — doubling width ~4× cost |
-| `block_size` | quadratic | Each token attends to all previous tokens — doubling context ~4× attention cost |
-
-**Recommended order to scale up:** `num_steps` first (no memory cost), then `n_embd` + `block_size` together (biggest quality gain), then `n_layer`.
-
-> Rule of thumb: doubling both `n_embd` and `block_size` increases training time by ~8–16×. Doubling only `n_layer` roughly doubles it.
+**Training**
+- **AdamW with param groups** — embeddings use `weight_decay=0.0`; all other matrices use `weight_decay=0.1`
+- **Gradient accumulation** — 4 micro-steps per optimizer update (effective batch = 32 × 256 × 4 = 32,768 tokens)
+- **Mixed precision** — `torch.amp.autocast` with `float16` and a `GradScaler`
+- **Gradient clipping** — global norm clipped to 1.0
+- **LR schedule** — constant at `base_lr=5e-4` for the first 90% of steps, then cosine cooldown to `min_lr=5e-5`
+- **Zero-init output projections** — `attn_wo` and `mlp_fc2` are initialised to zero for training stability
