@@ -55,7 +55,6 @@ python microgpt.py
 | `block_size` | 256 | Max context length (tokens) |
 | `n_head` | 8 | Number of attention heads |
 | `batch_size` | 32 | Sequences per gradient step |
-| `grad_accum_steps` | 4 | Gradient accumulation steps |
 
 ### Architecture and training changes (inspired by [EN10/modded-llama2.c](https://github.com/EN10/modded-llama2.c))
 
@@ -64,16 +63,10 @@ The updated notebook and `gpt.py` adopt a Llama-style design in place of the ori
 **Architecture**
 - **RMSNorm** instead of LayerNorm — applied before each sub-layer (pre-norm)
 - **RoPE** (Rotary Position Embeddings) instead of learned position embeddings
-- **relu²** activation (`F.relu(...).square()`) in the MLP instead of GELU
 - **Weight tying** — the token embedding matrix is reused as the language model head
-- **Padded vocab** — vocabulary size padded to a multiple of 128 for GPU efficiency
 - **KV cache** — inference uses a per-layer key/value cache for efficient token-by-token generation
 - **Flash attention** — `F.scaled_dot_product_attention` with `is_causal=True` during training
 
 **Training**
-- **AdamW with param groups** — embeddings use `weight_decay=0.0`; all other matrices use `weight_decay=0.1`
-- **Gradient accumulation** — 4 micro-steps per optimizer update (effective batch = 32 × 256 × 4 = 32,768 tokens)
+- **AdamW** optimizer with linear learning rate decay (matching `microgpt.py`)
 - **Mixed precision** — `torch.amp.autocast` with `float16` and a `GradScaler`
-- **Gradient clipping** — global norm clipped to 1.0
-- **LR schedule** — constant at `base_lr=5e-4` for the first 90% of steps, then cosine cooldown to `min_lr=5e-5`
-- **Zero-init output projections** — `attn_wo` and `mlp_fc2` are initialised to zero for training stability
