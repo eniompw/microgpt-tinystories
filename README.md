@@ -42,7 +42,7 @@ python microgpt.py
 |---|---|---|
 | Backend | Pure Python | PyTorch |
 | Hardware | CPU | T4 GPU (Colab) |
-| Dataset | Names (~32k names, GitHub) | TinyStories (1000 stories, HuggingFace) |
+| Dataset | Names (~32k names, GitHub) | TinyStories (5000 stories, HuggingFace) |
 | Vocabulary | Dynamic (from dataset) | Fixed 74-char ASCII |
 | Output | Hallucinated names | Hallucinated story snippets |
 
@@ -54,7 +54,8 @@ python microgpt.py
 | `n_embd` | 128 | Embedding / hidden dimension |
 | `block_size` | 256 | Max context length (tokens) |
 | `n_head` | 8 | Number of attention heads |
-| `batch_size` | 32 | Sequences per gradient step |
+| `batch_size` | 128 | Sequences per gradient step |
+| `num_steps` | 2000 | Training steps |
 
 ### Architecture and training changes (inspired by [EN10/modded-llama2.c](https://github.com/EN10/modded-llama2.c))
 
@@ -70,3 +71,4 @@ The updated notebook and `gpt.py` adopt a Llama-style design in place of the ori
 **Training**
 - **AdamW** optimizer with linear learning rate decay (matching `microgpt.py`)
 - **Mixed precision** — `torch.amp.autocast` with `float16` and a `GradScaler`
+- **`torch.compile`** — fuses GPU kernels on the training forward pass for ~2x speedup
