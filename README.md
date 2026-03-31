@@ -4,7 +4,7 @@ A minimal GPT trained from scratch — in a single Python file with no dependenc
 
 Based on [microgpt.py](https://gist.githubusercontent.com/karpathy/8627fe009c40f57531cb18360106ce95/raw/14fb038816c7aae0bb9342c2dbf1a51dd134a5ff/microgpt.py) by Andrej Karpathy.
 
-The updated `microgpt-colab.ipynb` and `gpt.py` took significant inspiration from [`model.py`](https://github.com/EN10/modded-llama2.c/blob/main/model.py) and [`train.py`](https://github.com/EN10/modded-llama2.c/blob/main/train.py) from [EN10/modded-llama2.c](https://github.com/EN10/modded-llama2.c).
+The updated `microgpt-gpu-colab.ipynb` and `gpt_gpu.py` took significant inspiration from [`model.py`](https://github.com/EN10/modded-llama2.c/blob/main/model.py) and [`train.py`](https://github.com/EN10/modded-llama2.c/blob/main/train.py) from [EN10/modded-llama2.c](https://github.com/EN10/modded-llama2.c).
 
 ---
 
@@ -30,15 +30,15 @@ python microgpt.py
 
 ---
 
-## `microgpt-colab.ipynb` — PyTorch + Colab T4 GPU
+## `microgpt-gpu-colab.ipynb` — PyTorch + Colab T4 GPU
 
-[microgpt-colab.ipynb](microgpt-colab.ipynb) is a PyTorch version of the same model, designed to run on a free Colab T4 GPU and trained on short story snippets instead of names.
+[microgpt-gpu-colab.ipynb](microgpt-gpu-colab.ipynb) is a PyTorch version of the same model, designed to run on a free Colab T4 GPU and trained on short story snippets instead of names.
 
 > **Before running:** go to **Runtime → Change runtime type → T4 GPU**.
 
 ### Differences from `microgpt.py`
 
-| | `microgpt.py` | `microgpt-colab.ipynb` |
+| | `microgpt.py` | `microgpt-gpu-colab.ipynb` |
 |---|---|---|
 | Backend | Pure Python | PyTorch |
 | Hardware | CPU | T4 GPU (Colab) |
@@ -59,7 +59,7 @@ python microgpt.py
 
 ### Architecture and training changes (inspired by [EN10/modded-llama2.c](https://github.com/EN10/modded-llama2.c))
 
-The updated notebook and `gpt.py` adopt a Llama-style design in place of the original minimal GPT:
+The updated notebook and `gpt_gpu.py` adopt a Llama-style design in place of the original minimal GPT:
 
 **Architecture**
 - **RMSNorm** instead of LayerNorm — applied before each sub-layer (pre-norm)
