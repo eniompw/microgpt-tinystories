@@ -62,21 +62,23 @@ python microgpt.py
 
 The updated notebook and `gpt_gpu.py` adopt a Llama-style design in place of the original minimal GPT:
 
+Relative improvements below are informed by the [modded-nanogpt speedrun](https://github.com/KellerJordan/modded-nanogpt), where each technique was measured in isolation on 8×H100 GPUs.
+
 **Architecture**
 
-| Change | Benefit | Impact |
+| Change | Benefit | Relative improvement (modded-nanogpt) |
 |---|---|---|
-| **Batched sequence processing** — full `(B, T)` tensor forward pass instead of token-by-token | Massive GPU utilization improvement; enables all other speed gains | Speed +++ |
-| **Flash attention** — `F.scaled_dot_product_attention` with `is_causal=True` | Fused O(T) memory attention kernel, ~2–4× faster than manual matmuls | Speed +++ |
-| **RoPE** (Rotary Position Embeddings) instead of learned position embeddings | Better length generalization, no extra parameters | Accuracy ++ |
-| **Weight tying** — embedding matrix reused as lm_head | Fewer parameters, stronger gradient signal to embeddings | Accuracy + |
-| **RMSNorm** instead of LayerNorm (pre-norm) | Simpler, faster, no mean subtraction or bias | Speed + |
-| **KV cache** — per-layer key/value cache at inference | Efficient token-by-token generation (linear instead of quadratic) | Inference speed ++ |
+| **Batched sequence processing** — full `(B, T)` tensor forward pass instead of token-by-token | Massive GPU utilization; enables all other speed gains | Foundational — prerequisite for all records |
+| **Flash attention** — `F.scaled_dot_product_attention` with `is_causal=True` | Fused O(T) memory attention kernel | ~30% faster (#12: 7.2 → 5.0 min) |
+| **RoPE** (Rotary Position Embeddings) instead of learned position embeddings | Better length generalization, no extra parameters | ~30% faster (#2: 45 → 31 min) |
+| **Weight tying** — embedding matrix reused as lm_head | Fewer parameters, stronger gradient signal to embeddings | ~neutral speed, saves params (#8/#51) |
+| **RMSNorm** instead of LayerNorm (pre-norm) | Simpler, faster, no mean subtraction or bias | ~5–10% faster (standard in all records) |
+| **KV cache** — per-layer key/value cache at inference | Efficient token-by-token generation (linear instead of quadratic) | Inference-only (not measured in speedrun) |
 
 **Training**
 
-| Change | Benefit | Impact |
+| Change | Benefit | Relative improvement (modded-nanogpt) |
 |---|---|---|
-| **Mixed precision** — `float16` autocast + `GradScaler` | ~2× speed, halves memory bandwidth; enables larger batches on T4 | Speed ++ |
-| **AdamW** optimizer with linear learning rate decay (matching `microgpt.py`) | Decoupled weight decay for better generalization | Accuracy + |
-| **`torch.compile`** — fuses GPU kernels on training forward pass | ~2× additional speedup by optimizing the computation graph | Speed ++ |
+| **Mixed precision** — `float16` autocast + `GradScaler` | ~2× speed, halves memory bandwidth; enables larger batches on T4 | ~5% faster (#10: 8.2 → 7.8 min) |
+| **AdamW** optimizer with linear learning rate decay (matching `microgpt.py`) | Decoupled weight decay for better generalization | Foundational — used in all records |
+| **`torch.compile`** — fuses GPU kernels on training forward pass | ~2× additional speedup by optimizing the computation graph | ~8% faster (#7: 13.1 → 12.0 min) |
