@@ -2,13 +2,13 @@
 
 A detailed breakdown of every design decision in `microgpt_fast.ipynb` / `microgpt_fast.py`, why it was chosen, and how much it helps.
 
-**Training time: ~3 min on a T4 GPU** (3500 steps, 4M tokens, ~5M parameters).
+**Training time: ~3 min on a T4 GPU** (3500 steps, ~4M tokens seen during training, ~5M parameters). The model is character-level throughout — each token is a single character (vocab size 75).
 
 ---
 
 ## Optimization journey
 
-The project started as a direct PyTorch port of the pure-Python `microgpt.py` — token-by-token training on a tiny model. Most of the iteration from there was trying to get loss low enough that the output reads as coherent English, first by overhauling the architecture, then by tuning the training recipe and model size.
+The project started as a direct PyTorch port of the pure-Python `microgpt.py` — token-by-token training on a tiny model. Each phase below describes a problem that was hit, how it was identified, and what was done to fix it.
 
 ### Phase 1: PyTorch port (token-by-token)
 
@@ -20,36 +20,27 @@ The initial Colab notebook was a straight conversion of `microgpt.py` to PyTorch
 | `3843e16` | 2 layers, 32-dim, block=32 | Tried scaling up |
 | `5d09563` | 2 layers, 16-dim, block=16 | Scaled back down — too slow token-by-token |
 
-At `9857ea2` loss was erratic (swinging between 0.03 and 4.0 — overfitting on a tiny model) and inference was capped at 16 characters per sample. This is a character-level model (`block_size = 16`), so the inference loop can produce at most 16 characters — most samples were just "Once upon a time".
+**Problem:** At `9857ea2` loss was erratic (swinging between 0.03 and 4.0 — overfitting on a tiny model) and inference was capped at 16 characters per sample. This is a character-level model (`block_size = 16`), so the inference loop can produce at most 16 characters — most samples were just "Once upon a time".
 
-Scaling up at `3843e16` (`block_size = 32`) made things worse: training took over 3 minutes to reach step 300 (vs 1000 steps previously), and the generated text was longer but pure gibberish — individual characters and fragments with no recognisable words.
+**Attempted fix:** Scaling up at `3843e16` (`block_size = 32`) made things worse — training took over 3 minutes to reach step 300 (vs 1000 steps previously), and the generated text was longer but pure gibberish.
 
-The token-by-token loop was the bottleneck — couldn't scale the model up without training taking forever.
+**Diagnosis:** The token-by-token loop was the bottleneck. Each training step processed a single character, so scaling the model up made training prohibitively slow without improving output quality.
 
 ### Phase 2: Architecture overhaul
 
-Rewrote the model based on [EN10/modded-llama2.c](https://github.com/EN10/modded-llama2.c). This was the biggest single change — went from token-by-token to batched training with a modern transformer architecture.
+**Fix:** Rewrote the model based on [EN10/modded-llama2.c](https://github.com/EN10/modded-llama2.c) — replaced the token-by-token loop with batched training and a modern transformer architecture.
 
 | Commit | Config | What changed |
 |---|---|---|
 | `0e0e40e` | 5 layers, 128-dim, block=256, batch=32, 1000 steps | Batched forward, RoPE, flash attention, RMSNorm, weight tying, mixed precision, grad clipping, ReLU² |
 
-New features in one commit: batched `(B, T)` training, `scaled_dot_product_attention`, RoPE, RMSNorm, weight tying, `GradScaler`, `clip_grad_norm_`. File renamed from `microgpt-colab.ipynb` → `microgpt-gpu-colab.ipynb` → `microgpt_fast.ipynb`.
+**Result:** Loss dropped smoothly (4.95 → 1.32 → 1.05 over 1000 steps, ~2 min) and inference produced full sentences — though riddled with nonsense words (e.g. "repling", "gavore", "bottrowing", "lookoment").
 
-Output at `0e0e40e`: loss dropped smoothly from 4.95 → 1.05 in ~2 min, and inference produced full sentences — though riddled with nonsense words (e.g. "repling", "gavore", "bottrowing", "lookoment"):
-
-```
-step    0/1000 | loss 4.95
-step  500/1000 | loss 1.32
-step 1000/1000 | loss 1.05
-
-sample 3: Once upon a time, there was a little girl named Tim. Tim liked to play too.
-         Ben were sad and spilled. It felt was very supply.
-```
+**Remaining problem:** Loss was still above 1.0 — output had sentence structure but too many invented words and broken grammar.
 
 ### Phase 3: Training recipe tuning
 
-With the architecture in place, iterated on training hyperparameters to push loss down.
+**Diagnosis:** With loss still above 1.0, the model might just need more training — the loss curve was still dropping at step 1000.
 
 | Commit | Config | What changed |
 |---|---|---|
@@ -57,37 +48,49 @@ With the architecture in place, iterated on training hyperparameters to push los
 | `73857d7` | batch 32→128, steps 3000→5000 | Bigger batches, more steps |
 | `b88c021` | steps 5000→2000, added `torch.compile` | `torch.compile` made each step ~2× faster, so fewer steps needed |
 
-By `b88c021` loss reached ~0.99 in ~2 min with `torch.compile`. Generated text had mostly real words and sentence structure, but grammar was still broken and some nonsense words remained (e.g. "envelue", "destand", "tigerusting").
+**Result:** By `b88c021` loss reached ~0.99 in ~2 min. Generated text had mostly real words and sentence structure, but grammar was still broken and some nonsense words remained (e.g. "envelue", "destand", "tigerusting").
 
-### Phase 4: Training recipe improvements (free gains)
+Between Phase 3 and 4, the notebook was renamed for clarity: `microgpt-colab.ipynb` → `microgpt-gpu-colab.ipynb` (`89caa81`) → `microgpt_fast.ipynb` (`63f4842`).
 
-Changed only the training recipe — no model size change. Same compute, better loss.
+### Phase 4: Training recipe improvements
+
+**Remaining problem:** Loss stuck around 0.99 — more steps weren't helping. The training recipe (linear LR decay, ReLU activation) might be leaving performance on the table.
+
+**Fix:** Switched to better training defaults without changing the model size — same compute, better loss.
 
 | Commit | Config | What changed |
 |---|---|---|
-| `3937510` | ReLU→SiLU, linear LR→cosine+warmup, lr 5e-4→1e-3, steps→3000 | SiLU activation, cosine LR schedule, warmup, gradient clipping, higher learning rate |
+| `3937510` | ReLU→SiLU, linear LR→cosine+warmup, lr 5e-4→1e-3, steps→3000 | SiLU activation, cosine LR schedule, warmup, higher learning rate |
 
-Loss: ~0.99 → ~0.81. Words mostly real but grammar still broken.
+**Result:** Loss: ~0.99 → ~0.81. Words mostly real but grammar still broken.
 
 ### Phase 5: Model size increase (the breakthrough)
 
-Loss plateaued at ~0.81 — a capacity ceiling. No training tricks could push past it.
+**Remaining problem:** Loss plateaued at ~0.81 — no amount of training recipe tuning could push past it.
+
+**Diagnosis:** Capacity ceiling. The 128-dim model had learned everything it could from the data. The loss curve was flat for the last 30%+ of training — a clear sign the model needed more parameters, not more steps.
+
+**Fix:** Increased model width (`n_embd` 128→256) which roughly quadrupled the parameters per layer. Halved batch size to fit GPU memory.
 
 | Commit | Config | What changed |
 |---|---|---|
 | `664b307` | n_embd 128→256, n_layer 5→6, batch 128→64, steps 3000→2000 | ~4× parameters per layer. Halved batch to fit GPU memory |
 
-Loss: ~0.81 → ~0.77. Coherent sentences appeared, some nonsense words remained.
+**Result:** Loss: ~0.81 → ~0.77. Coherent sentences appeared, some nonsense words remained.
 
 ### Phase 6: Final tuning
 
-Squeezed remaining quality from the training schedule.
+**Remaining problem:** Loss at 0.77 — output was coherent but still had occasional nonsense. The loss curve showed it was still dropping at step 2000, and the cosine LR schedule was decaying to zero, wasting the tail of training.
+
+**Fix:** Added a `min_lr` floor (1e-4) so the last third of training stays productive, increased steps to 3500, and lowered inference temperature from 0.8 to 0.7 to pick higher-confidence tokens.
 
 | Commit | Config | What changed |
 |---|---|---|
 | `dede655` | steps 2000→3500, min_lr=1e-4, temperature 0.8→0.7 | min_lr floor prevents wasted steps at tail, more steps, lower sampling temperature |
 
-Loss: ~0.77 → ~0.60. Output reads as simple children's stories.
+**Result:** Loss: ~0.77 → ~0.60. Output reads as simple children's stories:
+
+> Once upon a time, there was a little boy named Tim. Tim had a magic cabin every day. He loved to play with his toy cars, even if he would go fast and play all day...
 
 ### Key takeaways
 
@@ -263,7 +266,7 @@ When tweaking the model, the training loss curve tells you what's wrong and what
 
 ### Rules of thumb
 
-- **Width (`n_embd`) is more impactful than depth (`n_layer`)** for small models. Doubling `n_embd` roughly 4× the parameter count per layer.
+- **Width (`n_embd`) is more impactful than depth (`n_layer`)** for small models. Doubling `n_embd` roughly quadruples the parameter count per layer.
 - **Bigger model + fewer steps often beats smaller model + more steps** within a fixed time budget.
 - **Halve `batch_size` when you double model size** to stay within GPU memory.
 - **Learning rate and model size are linked** — larger models generally need lower learning rates.
@@ -273,7 +276,7 @@ When tweaking the model, the training loss curve tells you what's wrong and what
 
 ## Relative improvements (modded-nanogpt benchmarks)
 
-These numbers are from the [modded-nanogpt speedrun](https://github.com/KellerJordan/modded-nanogpt), where each technique was measured in isolation on 8×H100 GPUs.
+These numbers are from the [modded-nanogpt speedrun](https://github.com/KellerJordan/modded-nanogpt), where each technique was measured in isolation on 8×H100 GPUs training a much larger model. They show the *relative* value of each technique — the absolute speedups differ on a T4 with a 5M-param model.
 
 | Change | Relative improvement |
 |---|---|
