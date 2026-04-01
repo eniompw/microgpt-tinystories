@@ -20,17 +20,9 @@ The initial Colab notebook was a straight conversion of `microgpt.py` to PyTorch
 | `3843e16` | 2 layers, 32-dim, block=32 | Tried scaling up |
 | `5d09563` | 2 layers, 16-dim, block=16 | Scaled back down — too slow token-by-token |
 
-Output at `9857ea2`: loss was erratic (ranging from 0.03 to 4.0 — classic overfitting on a tiny model) and inference produced only ~16 characters per sample:
+At `9857ea2` loss was erratic (swinging between 0.03 and 4.0 — overfitting on a tiny model) and inference was capped at 16 characters per sample. This is a character-level model (`block_size = 16`), so the inference loop can produce at most 16 characters — most samples were just "Once upon a time".
 
-```
-step  200 / 1000 | loss 0.0332
-step  600 / 1000 | loss 0.3019
-step  800 / 1000 | loss 1.0971
-step 1000 / 1000 | loss 0.2125
-
-sample  1: Once upon a time
-sample  8: Lily like a as a
-```
+Scaling up at `3843e16` (`block_size = 32`) made things worse: training took over 3 minutes to reach step 300 (vs 1000 steps previously), and the generated text was longer but pure gibberish — individual characters and fragments with no recognisable words.
 
 The token-by-token loop was the bottleneck — couldn't scale the model up without training taking forever.
 
@@ -64,6 +56,8 @@ With the architecture in place, iterated on training hyperparameters to push los
 | `07f6b92` | steps 1000→3000, lr=5e-4 | More training steps |
 | `73857d7` | batch 32→128, steps 3000→5000 | Bigger batches, more steps |
 | `b88c021` | steps 5000→2000, added `torch.compile` | `torch.compile` made each step ~2× faster, so fewer steps needed |
+
+By `b88c021` loss reached ~0.99 in ~2 min with `torch.compile`. Generated text had mostly real words and sentence structure, but grammar was still broken and some nonsense words remained (e.g. "envelue", "destand", "tigerusting").
 
 ### Phase 4: Training recipe improvements (free gains)
 
