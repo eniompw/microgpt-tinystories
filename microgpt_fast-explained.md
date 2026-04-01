@@ -6,6 +6,25 @@ A detailed breakdown of every design decision in `microgpt_fast.ipynb` / `microg
 
 ---
 
+## Contents
+
+- [Optimization journey](#optimization-journey) — how the model went from broken output to coherent stories, phase by phase
+  - [Phase 1: PyTorch port](#phase-1-pytorch-port-token-by-token)
+  - [Phase 2: Architecture overhaul](#phase-2-architecture-overhaul)
+  - [Phase 3: Training recipe tuning](#phase-3-training-recipe-tuning)
+  - [Phase 4: Training recipe improvements](#phase-4-training-recipe-improvements)
+  - [Phase 5: Model size increase](#phase-5-model-size-increase-the-breakthrough)
+  - [Phase 6: Final tuning](#phase-6-final-tuning)
+  - [Key takeaways](#key-takeaways)
+- [Architecture](#architecture) — what each component does and why it was chosen
+- [Training](#training) — mixed precision, torch.compile, LR schedule, optimizer
+- [Model configuration](#model-configuration) — final hyperparameters
+- [Tuning hyperparameters](#tuning-hyperparameters) — how to diagnose and fix common problems
+- [Relative improvements](#relative-improvements-modded-nanogpt-benchmarks) — benchmarks from modded-nanogpt
+- [Glossary](#glossary) — plain-English definitions of all technical terms
+
+---
+
 ## Optimization journey
 
 The project started as a direct PyTorch port of the pure-Python `microgpt.py` — token-by-token training on a tiny model. Each phase below describes a problem that was hit, how it was identified, and what was done to fix it.
