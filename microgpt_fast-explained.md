@@ -286,3 +286,79 @@ These numbers are from the [modded-nanogpt speedrun](https://github.com/KellerJo
 | RMSNorm | ~5–10% faster (standard in all records) |
 | Mixed precision | ~5% faster (#10: 8.2 → 7.8 min) |
 | `torch.compile` | ~8% faster (#7: 13.1 → 12.0 min) |
+
+---
+
+## Glossary
+
+Plain-English explanations of the technical terms used in this document.
+
+### Core concepts
+
+| Term | What it means |
+|---|---|
+| **Token** | The smallest unit the model reads and writes. In this project, each token is a single character (letter, space, punctuation). Other models use words or word-pieces. |
+| **Vocab / vocab size** | The complete set of tokens the model knows — here, 75 characters (a–z, A–Z, digits, punctuation, plus a special start-of-story marker). |
+| **Loss** | A number that measures how wrong the model's predictions are. Lower = better. A loss of 0 would mean perfect prediction; in practice it never reaches 0. |
+| **Training step** | One round of "show the model some data, measure how wrong it is, adjust its weights". The model gets a little better each step. |
+| **Inference** | Using the trained model to generate new text (as opposed to training it). |
+| **Parameters** | The numbers inside the model that get adjusted during training. More parameters = the model can learn more complex patterns, but needs more memory and time. Think of them as the model's "brain cells". |
+| **Overfitting** | When the model memorises the training data instead of learning general patterns. Like studying only past exam answers — you ace those exact questions but fail on new ones. |
+| **Underfitting** | The opposite — the model hasn't learned enough, even from the training data. Like not studying enough. |
+| **Capacity ceiling** | When a model is too small to learn anything more from the data, no matter how long you train it. The only fix is a bigger model. |
+
+### Model architecture
+
+| Term | What it means |
+|---|---|
+| **Transformer** | The type of neural network architecture used by GPT, Llama, and nearly all modern language models. It uses "attention" to let each token look at all previous tokens when making predictions. |
+| **Decoder-only** | A transformer that only generates text (as opposed to encoder-decoder models that also read/summarise input). All GPT-style models are decoder-only. |
+| **Layer (`n_layer`)** | One complete processing block in the model. Data flows through layers sequentially — more layers = the model can learn more abstract patterns. Like adding more floors to a building. |
+| **Embedding dimension (`n_embd`)** | The size of the internal representation for each token — how many numbers are used to describe it. A 256-dim embedding means each token is represented by a list of 256 numbers. Bigger = richer representation. |
+| **Attention head (`n_head`)** | Attention is split into multiple "heads" that each focus on different patterns (e.g. one might track grammar, another might track meaning). More heads = more diverse pattern detection. |
+| **Block size / context length** | The maximum number of tokens the model can "see" at once. With `block_size = 256`, the model can look back at the last 256 characters when predicting the next one. |
+| **RoPE (Rotary Position Embeddings)** | A way to tell the model where each token is in the sequence by rotating its numbers. The alternative (learned positions) requires storing a separate table, and doesn't generalise to lengths not seen during training. |
+| **RMSNorm** | A way to keep numbers inside the model from getting too large or too small between layers. Simpler and faster than the older "LayerNorm" method. |
+| **Weight tying** | Reusing the same table of numbers for both looking up tokens (input) and predicting tokens (output). Saves memory and actually improves learning. |
+| **Flash attention** | A faster way to compute attention that avoids creating a huge intermediate matrix. Same result, less memory, much faster. |
+| **KV cache** | During text generation, the model saves its intermediate work (keys and values) so it doesn't have to redo calculations for tokens it's already processed. |
+| **MLP (Multi-Layer Perceptron)** | The "feed-forward" part of each transformer layer — a simple two-layer neural network that processes each token independently. |
+| **Activation function (ReLU, SiLU)** | A function applied between layers that introduces non-linearity — without it, stacking layers would be no better than one layer. ReLU zeroes out negative values; SiLU is smoother and generally works better. |
+| **lm_head** | The final layer that converts the model's internal representation into a prediction over the vocabulary — "which token comes next?" |
+
+### Training
+
+| Term | What it means |
+|---|---|
+| **Batch / batch size** | How many sequences the model processes at once before updating its weights. Bigger batches = more stable learning, but need more GPU memory. |
+| **Learning rate (LR)** | How big a step the model takes when adjusting its weights each training step. Too high = unstable (loss jumps around). Too low = learns very slowly. |
+| **Cosine LR schedule** | A way to gradually reduce the learning rate over training that follows a cosine curve — starts high, slowly decreases, flattens at the end. Better than a straight line decrease. |
+| **Warmup** | Starting with a very small learning rate and gradually increasing it over the first few hundred steps. Prevents the model from making wild adjustments when its weights are still random. |
+| **min_lr floor** | A minimum learning rate that the schedule never drops below. Without it, the LR decays to zero and the model stops learning in the final portion of training. |
+| **Gradient** | The direction and amount to adjust each parameter to reduce the loss. Calculated from the training data each step. |
+| **Gradient clipping** | Capping the size of gradients so no single step makes a huge change to the model. Prevents sudden loss spikes. |
+| **AdamW** | The optimiser — the algorithm that decides exactly how to update the model's parameters using the gradients. AdamW is the standard choice for training transformers. |
+| **Mixed precision (float16)** | Using smaller numbers (16-bit instead of 32-bit) during training to run ~2× faster. A `GradScaler` prevents the smaller numbers from causing rounding errors. |
+| **`torch.compile`** | A PyTorch feature that analyses your model and automatically fuses operations into faster GPU code. Like a compiler for neural networks. |
+| **Forward pass** | Running data through the model to get predictions. |
+| **Backward pass** | Calculating gradients by running backward through the model — figuring out how to adjust each parameter. |
+| **Cross-entropy loss** | The specific loss function used — measures how far the model's predicted probability distribution is from the actual next character. |
+
+### Inference
+
+| Term | What it means |
+|---|---|
+| **Temperature** | Controls randomness when generating text. Lower temperature (e.g. 0.7) = the model picks higher-confidence tokens, producing more predictable text. Higher temperature = more creative but more likely to produce nonsense. Temperature of 1.0 = no adjustment. |
+| **Sampling** | Randomly picking the next token based on the model's predicted probabilities, rather than always picking the most likely one. |
+| **Logits** | The raw scores the model outputs for each possible next token, before converting to probabilities. |
+
+### Hardware & tools
+
+| Term | What it means |
+|---|---|
+| **GPU (Graphics Processing Unit)** | A chip designed for parallel computation — much faster than a CPU for the matrix maths that neural networks rely on. |
+| **T4** | An NVIDIA GPU commonly available for free on Google Colab. Not the fastest, but enough to train small models. |
+| **CUDA** | NVIDIA's software platform that lets programs run computations on their GPUs. |
+| **PyTorch** | The Python library used to build and train the model. Handles all the GPU acceleration, automatic gradient calculation, etc. |
+| **Google Colab** | A free online notebook environment from Google that provides GPU access — where this model was developed and trained. |
+| **Kernel (CUDA kernel)** | A small program that runs on the GPU. Flash attention, for example, replaces many small GPU programs with one efficient one. |
