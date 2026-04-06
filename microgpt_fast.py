@@ -51,7 +51,8 @@ print(f"vocab size: {vocab_size}")
 print(f"BOS token id: {BOS}")
 
 # Encode / decode helpers
-encode = lambda s: [uchars.index(ch) for ch in s]
+stoi = {ch: i for i, ch in enumerate(uchars)}
+encode = lambda s: [stoi[ch] for ch in s]
 decode = lambda ids: ''.join(uchars[i] for i in ids)
 
 # Sanity check
@@ -170,18 +171,29 @@ import time
 import matplotlib.pyplot as plt
 
 # ── Prepare token stream ─────────────────────────────────────────────────────
-all_tokens = []
+all_tokens = [BOS]
 for doc in docs:
-    all_tokens.extend([BOS] + encode(doc))
-all_tokens.append(BOS)
+    all_tokens.extend(encode(doc) + [BOS])
 all_tokens = torch.tensor(all_tokens, dtype=torch.long, device=device)
 print(f"Total tokens: {len(all_tokens):,}")
+
+def get_batch():
+    starts = torch.randint(0, len(all_tokens) - block_size - 1, (batch_size,))
+    xb = torch.stack([all_tokens[i : i + block_size] for i in starts])
+    yb = torch.stack([all_tokens[i + 1 : i + block_size + 1] for i in starts])
+    return xb, yb
 
 # ── Optimizer: AdamW ─────────────────────────────────────────────────────────
 num_steps     = 3500
 warmup_steps  = 200
 learning_rate = 1e-3
 min_lr        = 1e-4   # 10% of peak — prevents wasted steps at tail
+
+def get_lr(step):
+    if step < warmup_steps:
+        return learning_rate * step / warmup_steps
+    progress = (step - warmup_steps) / (num_steps - warmup_steps)
+    return min_lr + (learning_rate - min_lr) * 0.5 * (1 + math.cos(math.pi * progress))
 
 optimizer = torch.optim.AdamW(params, lr=learning_rate, betas=(0.9, 0.95), eps=1e-10)
 
@@ -193,30 +205,21 @@ loss_history = []
 t0 = time.time()
 
 for step in range(num_steps + 1):
-    # Cosine learning rate schedule with warmup
-    if step < warmup_steps:
-        lr_t = learning_rate * step / warmup_steps
-    else:
-        progress = (step - warmup_steps) / (num_steps - warmup_steps)
-        lr_t = min_lr + (learning_rate - min_lr) * 0.5 * (1 + math.cos(math.pi * progress))
+    lr_t = get_lr(step)
     for g in optimizer.param_groups:
         g['lr'] = lr_t
 
     if step % 100 == 0:
+        xb, yb = get_batch()
         with torch.no_grad(), torch.amp.autocast('cuda', dtype=torch.float16):
-            ix = torch.randint(0, len(all_tokens) - block_size - 1, (batch_size,))
-            xb = torch.stack([all_tokens[i:i+block_size] for i in ix])
-            yb = torch.stack([all_tokens[i+1:i+block_size+1] for i in ix])
             el = F.cross_entropy(gpt_train(xb).view(-1, vocab_size), yb.view(-1)).item()
         print(f"step {step:4d}/{num_steps} | loss {el:.4f} | lr {lr_t:.2e} | {time.time()-t0:.1f}s")
 
     if step >= num_steps:
         break
 
-    optimizer.zero_grad()
-    ix = torch.randint(0, len(all_tokens) - block_size - 1, (batch_size,))
-    xb = torch.stack([all_tokens[i:i+block_size] for i in ix])
-    yb = torch.stack([all_tokens[i+1:i+block_size+1] for i in ix])
+    optimizer.zero_grad(set_to_none=True)
+    xb, yb = get_batch()
     with torch.amp.autocast('cuda', dtype=torch.float16):
         loss = F.cross_entropy(gpt_train(xb).view(-1, vocab_size), yb.view(-1))
     scaler.scale(loss).backward()
@@ -237,21 +240,23 @@ temperature = 0.7   # (0, 1] — lower = more focused, higher = more random
 num_samples = 5
 max_new_tokens = 200  # generate up to this many tokens per sample
 
-print("--- inference (hallucinated stories) ---\n")
-t0 = time.time()
-for sample_idx in range(num_samples):
-    keys   = [[] for _ in range(n_layer)]
+def generate_sample(max_new_tokens=200, temperature=0.7):
+    keys = [[] for _ in range(n_layer)]
     values = [[] for _ in range(n_layer)]
     token_id = BOS
     sample = []
     with torch.no_grad():
         for pos_id in range(max_new_tokens):
-            pos = min(pos_id, block_size - 1)
-            logits = gpt(token_id, pos, keys, values)
-            probs  = F.softmax(logits[:vocab_size] / temperature, dim=-1)
+            logits = gpt(token_id, min(pos_id, block_size - 1), keys, values)
+            probs = F.softmax(logits[:vocab_size] / temperature, dim=-1)
             token_id = torch.multinomial(probs, 1).item()
             if token_id == BOS:
                 break
             sample.append(uchars[token_id])
-    print(f"sample {sample_idx+1}:\n{''.join(sample)}\n")
+    return ''.join(sample)
+
+print("--- inference (hallucinated stories) ---\n")
+t0 = time.time()
+for sample_idx in range(num_samples):
+    print(f"sample {sample_idx+1}:\n{generate_sample(max_new_tokens, temperature)}\n")
 print(f"Done in {time.time()-t0:.1f}s")
