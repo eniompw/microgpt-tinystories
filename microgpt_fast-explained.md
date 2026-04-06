@@ -199,9 +199,21 @@ Runs the forward pass in float16 (half the memory bandwidth), then `GradScaler` 
 
 ```python
 gpt_train = torch.compile(gpt_train)
+print(f"torch.compile cache: {os.getenv('TORCHINDUCTOR_CACHE_DIR', '~/.cache/torch/inductor')}")
 ```
 
 Traces the forward function and fuses operations into optimised CUDA kernels (e.g. combining matmul + activation into a single kernel launch). ~2× additional speedup. Only applied to the training forward pass — the inference `gpt()` function uses Python-level KV cache manipulation that doesn't benefit from compilation.
+
+**What the compiler needs to optimise well:** The loop structure inside the compiled function must be statically traceable. `for li in range(n_layer):` with a module-level constant lets the compiler fully unroll and specialise the loop. Replacing this with `for layer in layers:` — iterating a Python list of dicts — breaks static tracing, causing ~40s of JIT warmup at step 0 (vs ~3s normally) and measurably slower per-step execution.
+
+**Cold vs warm compile:** The first run on a fresh Colab session compiles kernels and caches them in `/tmp/torchinductor_root`. The step 0 timestamp is the clearest indicator:
+
+| Step 0 time | Meaning |
+|---|---|
+| ~3–4s | Cold compile — kernels being built for the first time |
+| ~0.5–1s | Warm cache — compiled kernels reused from earlier in the session |
+
+On a warm cache, training starts ~5× faster at step 0. The `torch.compile cache:` print confirms which path was taken.
 
 ### Cosine LR with warmup and min_lr floor
 
@@ -265,6 +277,17 @@ When tweaking the model, the training loss curve tells you what's wrong and what
 | Loss drops quickly then flattens — more training steps don't help | **Capacity ceiling** | The model has learned everything it can at its current size |
 | Loss is still dropping when training ends | **Undertrained** | The model needs more steps to converge |
 | Loss spikes or diverges mid-training | **Training instability** | Learning rate too high, or missing gradient clipping |
+| Step 0 takes ~40s instead of ~3s | **Compile regression** | A code change broke `torch.compile`'s ability to statically trace the loop — check that `for li in range(n_layer):` hasn't been replaced with a dynamic Python loop |
+
+### Benchmarking training speed on Colab T4
+
+Colab T4 instances share physical hardware — clock speeds, thermal state, and background load vary between allocations. This creates unavoidable noise in timing measurements:
+
+- **~4% run-to-run variation is normal** and should be ignored.
+- **>10–15% consistent difference** across multiple runs indicates a real regression.
+- **Normalise by per-100-steps time**, not total time — different runs may have different `num_steps`.
+- **Compare on the same session** (factory reset between runs) for a fair back-to-back comparison. Different Colab instances can differ by 15–20%.
+- **Step 0 timing** is the most useful single number: it tells you whether `torch.compile` hit the cache (~0.6s) or compiled from scratch (~3.5s), and whether a code change broke compilation (~40s).
 
 ### How to diagnose from the loss curve
 
