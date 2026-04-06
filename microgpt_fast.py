@@ -139,7 +139,7 @@ def gpt_train(tokens):
     return F.linear(rmsnorm(x), wte)   # weight-tied lm_head
 
 gpt_train = torch.compile(gpt_train)  # fuse GPU kernels for ~2x speedup
-print(f"torch.compile cache: {torch._inductor.config.cache_dir}")
+print(f"torch.compile cache: {os.getenv('TORCHINDUCTOR_CACHE_DIR', '~/.cache/torch/inductor')}")
 
 # ── Single-token forward (for inference with KV cache) ───────────────────────
 def gpt(token_id, pos_id, keys, values):
