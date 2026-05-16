@@ -3,7 +3,7 @@ The most atomic way to train and run inference for a GPT in pure, dependency-fre
 This file is the complete algorithm.
 Everything else is just efficiency.
 
-@karpathy
+Based on @karpathy's microgpt: https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95
 """
 
 import os       # os.path.exists
