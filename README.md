@@ -2,7 +2,7 @@
 
 A minimal GPT trained from scratch — designed to teach LLM development from first principles. Start with a pure-Python implementation, then progress to PyTorch, then to GPU-optimised training on a free Colab T4.
 
-Based on [microgpt.py](https://gist.githubusercontent.com/karpathy/8627fe009c40f57531cb18360106ce95/raw/14fb038816c7aae0bb9342c2dbf1a51dd134a5ff/microgpt.py) by Andrej Karpathy, with GPU training inspired by [EN10/modded-llama2.c](https://github.com/EN10/modded-llama2.c).
+The project follows this evolution: it starts from Andrej Karpathy's pure-Python [microgpt.py gist](https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95) (included here as `microgpt.py`), which is then converted to PyTorch to create `microgpt_torch.py`. Next, speed improvements and modern techniques inspired by [EN10/modded-llama2.c](https://github.com/EN10/modded-llama2.c) were added to produce `microgpt_fast`. Finally, it was pared back for conciseness to create `microgpt_lite`.
 
 ---
 
@@ -19,7 +19,7 @@ Based on [microgpt.py](https://gist.githubusercontent.com/karpathy/8627fe009c40f
 
 ## `microgpt.py` — Pure Python, no dependencies
 
-Trains a tiny GPT on ~32,000 first names entirely in plain Python (no PyTorch, no NumPy).
+A direct copy of Andrej Karpathy's [gist](https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95). Trains a tiny GPT on ~32,000 first names entirely in plain Python (no PyTorch, no NumPy).
 
 ```bash
 python microgpt.py

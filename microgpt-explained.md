@@ -1,8 +1,8 @@
 # How `microgpt.py` works
 
-A step-by-step walkthrough of the pure-Python GPT — no PyTorch, no NumPy, just `os`, `math`, and `random`.
+A step-by-step walkthrough of the pure-Python GPT — no PyTorch, no NumPy, just `os`, `math`, and `random`. This is a direct copy of Andrej Karpathy's [gist](https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95).
 
-> *"The most atomic way to train and run inference for a GPT in pure, dependency-free Python. This file is the complete algorithm. Everything else is just efficiency."* — @karpathy
+> *"The most atomic way to train and run inference for a GPT in pure, dependency-free Python. This file is the complete algorithm. Everything else is just efficiency."* — [@karpathy](https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95)
 
 ---
 
